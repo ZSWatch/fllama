@@ -13,7 +13,7 @@ A new Flutter FFI plugin project.
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Your Company' => 'email@example.com' }
   s.dependency 'Flutter'
-  s.platform = :ios, '13.0'
+  s.platform = :ios, '14.0'
   s.swift_version = '5.0'
 
   s.source           = { :path => '.' }
@@ -29,6 +29,10 @@ A new Flutter FFI plugin project.
   s.pod_target_xcconfig = { 
     'DEFINES_MODULE' => 'YES', 
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
+    'USE_HEADERMAP' => 'NO',
+    'HEADERMAP_USES_VFS' => 'NO',
+    'HEADERMAP_INCLUDES_FLAT_ENTRIES_FOR_TARGET_BEING_BUILT' => 'NO',
+    'HEADERMAP_INCLUDES_PROJECT_HEADERS' => 'NO',
     # Header paths for llama.cpp includes - the source code uses paths like:
     # - "llama.h" (in include/)
     # - "ggml.h" (in ggml/include/)  

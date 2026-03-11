@@ -18,7 +18,6 @@
 #include "../ios/llama.cpp/common/common.h"
 #include <nlohmann/json.hpp>
 #include "../ios/llama.cpp/common/sampling.h"
-#include "../ios/llama.cpp/ggml/include/ggml.h"
 #include "../ios/llama.cpp/include/llama.h"
 
 #elif TARGET_OS_OSX

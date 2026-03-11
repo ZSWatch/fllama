@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ggml.h" // for ggml_log_level
+#include "../ggml/include/ggml.h" // for ggml_log_level
 
 #define LOG_CLR_TO_EOL  "\033[K\r"
 #define LOG_COL_DEFAULT "\033[0m"

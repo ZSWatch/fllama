@@ -3,12 +3,33 @@
 // I'll gradually clean and extend it
 // Note: Even when using identical normalized image inputs (see normalize_image_u8_to_f32()) we have a significant difference in resulting embeddings compared to pytorch
 #include "clip.h"
+
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+
+#if TARGET_OS_IOS
+#include "../ios/llama.cpp/ggml/include/ggml.h"
+#include "../ios/llama.cpp/ggml/include/ggml-cpp.h"
+#include "../ios/llama.cpp/ggml/include/ggml-cpu.h"
+#include "../ios/llama.cpp/ggml/include/ggml-alloc.h"
+#include "../ios/llama.cpp/ggml/include/ggml-backend.h"
+#include "../ios/llama.cpp/ggml/include/gguf.h"
+#elif TARGET_OS_OSX
+#include "../macos/llama.cpp/ggml/include/ggml.h"
+#include "../macos/llama.cpp/ggml/include/ggml-cpp.h"
+#include "../macos/llama.cpp/ggml/include/ggml-cpu.h"
+#include "../macos/llama.cpp/ggml/include/ggml-alloc.h"
+#include "../macos/llama.cpp/ggml/include/ggml-backend.h"
+#include "../macos/llama.cpp/ggml/include/gguf.h"
+#else
 #include "ggml.h"
 #include "ggml-cpp.h"
 #include "ggml-cpu.h"
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
 #include "gguf.h"
+#endif
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb/stb_image.h"

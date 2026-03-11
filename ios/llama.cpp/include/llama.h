@@ -1,10 +1,10 @@
 #ifndef LLAMA_H
 #define LLAMA_H
 
-#include "ggml.h"
-#include "ggml-cpu.h"
-#include "ggml-backend.h"
-#include "ggml-opt.h"
+#include "../ggml/include/ggml.h"
+#include "../ggml/include/ggml-cpu.h"
+#include "../ggml/include/ggml-backend.h"
+#include "../ggml/include/ggml-opt.h"
 
 #include <stddef.h>
 #include <stdint.h>
