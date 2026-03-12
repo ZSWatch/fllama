@@ -197,7 +197,9 @@ add_subdirectory(src)
 
 if (LLAMA_BUILD_COMMON)
     add_subdirectory(common)
-    add_subdirectory(vendor/cpp-httplib)
+    if (LLAMA_HTTPLIB)
+        add_subdirectory(vendor/cpp-httplib)
+    endif()
 endif()
 
 if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_TESTS AND NOT CMAKE_JS_VERSION)

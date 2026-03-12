@@ -111,8 +111,11 @@ endif()
 
 target_link_libraries(${TARGET} PRIVATE
     build_info
-    cpp-httplib
 )
+
+if (TARGET cpp-httplib)
+    target_link_libraries(${TARGET} PRIVATE cpp-httplib)
+endif()
 
 if (LLAMA_LLGUIDANCE)
     include(ExternalProject)
