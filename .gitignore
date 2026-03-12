@@ -36,4 +36,5 @@ macos/libs/libggml-metal.a
 macos/libs/libggml.a
 macos/libs/libllama.a
 macos/libs/libmtmd.a
+ios/libs/
 example/.model_cache/
