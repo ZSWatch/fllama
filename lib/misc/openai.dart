@@ -71,6 +71,9 @@ class OpenAiRequest {
   final String? jinjaTemplate;
   final Function(String)? logger;
   final ToolChoice? toolChoice;
+  /// When false, disables reasoning/thinking for models that support it
+  /// (e.g. Qwen3/3.5). Defaults to true (model decides).
+  final bool enableThinking;
 
   String toJsonString() {
     final Map<String, dynamic> json = {
@@ -104,6 +107,7 @@ class OpenAiRequest {
       'presence_penalty': presencePenalty,
       if (toolChoice != null) 'tool_choice': toolChoice?.jsonName,
       if (jinjaTemplate != null) 'jinja_template': jinjaTemplate,
+      'enable_thinking': enableThinking,
     };
     return jsonEncode(json);
   }
@@ -142,5 +146,6 @@ class OpenAiRequest {
     // Optional logger.
     this.logger,
     this.jinjaTemplate,
+    this.enableThinking = true,
   });
 }

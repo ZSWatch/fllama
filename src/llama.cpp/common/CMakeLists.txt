@@ -31,6 +31,11 @@ else()
     message(WARNING "Git repository not found; to enable automatic generation of build info, make sure Git is installed and the project is a Git repository.")
 endif()
 
+# Provide defaults when git info is unavailable
+if(NOT DEFINED LLAMA_BUILD_NUMBER OR "${LLAMA_BUILD_NUMBER}" STREQUAL "")
+    set(LLAMA_BUILD_NUMBER 0)
+endif()
+
 set(TEMPLATE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/build-info.cpp.in")
 set(OUTPUT_FILE   "${CMAKE_CURRENT_BINARY_DIR}/build-info.cpp")
 configure_file(${TEMPLATE_FILE} ${OUTPUT_FILE})

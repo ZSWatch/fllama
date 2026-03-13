@@ -977,6 +977,14 @@ fllama_inference_sync(fllama_inference_request request,
           common_chat_templates_inputs tmpl_inputs;
           tmpl_inputs.use_jinja = true;
           tmpl_inputs.add_generation_prompt = true;
+
+          // Disable thinking/reasoning for models like Qwen3/3.5 when requested
+          if (body.contains("enable_thinking") && body["enable_thinking"].is_boolean()) {
+            tmpl_inputs.enable_thinking = body["enable_thinking"].get<bool>();
+            if (!tmpl_inputs.enable_thinking) {
+              log_message("Thinking/reasoning DISABLED via enable_thinking=false", request.dart_logger);
+            }
+          }
           tmpl_inputs.messages =
               common_chat_msgs_parse_oaicompat(body["messages"]);
 
