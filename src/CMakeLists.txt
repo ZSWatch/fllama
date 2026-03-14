@@ -27,17 +27,24 @@ if(ANDROID)
     message(STATUS "CMAKE_ANDROID_ARCH_ABI: ${CMAKE_ANDROID_ARCH_ABI}")
     message(STATUS "CMAKE_SYSTEM_PROCESSOR: ${CMAKE_SYSTEM_PROCESSOR}")
     
-    # Android-specific settings for llama.cpp (apply to all Android builds)
-    set(GGML_LLAMAFILE OFF CACHE BOOL "Disable llamafile for Android" FORCE)
+  # Android-specific settings for llama.cpp (apply to all Android builds)
+  # Build CPU backends as shared libs so ggml can load multiple Android ARM
+  # variants at runtime. This is how llama.cpp's Android example enables
+  # DOTPROD/FP16/i8mm dispatch safely across different SoCs.
+  set(BUILD_SHARED_LIBS ON CACHE BOOL "Use shared libs for Android runtime backends" FORCE)
+  set(GGML_BACKEND_DL ON CACHE BOOL "Enable dynamic backend loading on Android" FORCE)
+  set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "Build all Android CPU variants" FORCE)
+  set(GGML_LLAMAFILE OFF CACHE BOOL "Use ggml CPU variants instead of llamafile on Android" FORCE)
     set(GGML_OPENMP OFF CACHE BOOL "Disable OpenMP for Android" FORCE)
-    set(BUILD_SHARED_LIBS OFF CACHE BOOL "Use static libs for Android" FORCE)
     
     # Only apply ARM-specific optimizations for ARM64 builds
     if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
-        message(STATUS "ARM64 Android build - enabling dot product optimizations with KleiDiAI support")
-        # ARMv8.2-A with dot product only (i8mm not supported on this device)
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8.2-a+dotprod -O3")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8.2-a+dotprod -O3")
+    message(STATUS "ARM64 Android build - enabling baseline dot product + fp16 optimizations")
+    # Baseline arm64-v8a build: DOTPROD + FP16 are safe everywhere.
+    # Faster features such as i8mm come from GGML_CPU_ALL_VARIANTS and
+    # are selected at runtime on supported devices.
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8.2-a+dotprod+fp16 -O3")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8.2-a+dotprod+fp16 -O3")
         
         # Enable KleiDiAI ONLY for ARM64 builds (it's ARM64-specific)
         # Disabled: it requires CMake 4.0+ and src/CMakeLists.txt (via flutter template)

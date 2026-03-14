@@ -45,7 +45,7 @@ android {
             // affecting armeabi-v7a.
             //
             // See https://github.com/ggerganov/llama.cpp/pull/4926/commits/943bba2e5d75b130f2370719282024985c31fc6d
-            abiFilters 'arm64-v8a', 'x86_64', 'x86'
+            abiFilters 'arm64-v8a', 'x86_64'
         }
 
         externalNativeBuild {
@@ -55,7 +55,10 @@ android {
                 //
                 // 25-07-17: Add build # and commit to workaround whatever llama.cpp
                 // rearchitecture happened since last drop 2-3 months ago.
-                arguments "-DLLAMA_CURL=OFF", "-DLLAMA_BUILD_NUMBER=1", "-DLLAMA_BUILD_COMMIT=unknown"
+                arguments "-DLLAMA_CURL=OFF", "-DLLAMA_BUILD_NUMBER=1", "-DLLAMA_BUILD_COMMIT=unknown",
+                        "-DBUILD_SHARED_LIBS=ON",
+                        "-DGGML_BACKEND_DL=ON",
+                        "-DGGML_CPU_ALL_VARIANTS=ON"
             }
         }
     }

@@ -50,6 +50,12 @@
 #include <cstring>
 #include <ctime>
 #include <deque>
+#if defined(__ANDROID__)
+#include <dlfcn.h>
+#include <sys/resource.h>
+#include <sched.h>
+#include <unistd.h>
+#endif
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -72,6 +78,105 @@ static void log_message(const char *message,
                         fllama_log_callback dart_logger = nullptr);
 static void log_message(const std::string &message,
                         fllama_log_callback dart_logger = nullptr);
+
+#if defined(__ANDROID__)
+static std::string get_android_native_library_dir() {
+  Dl_info info;
+  if (dladdr(reinterpret_cast<const void *>(&fllama_inference_sync), &info) ==
+          0 ||
+      info.dli_fname == nullptr) {
+    return {};
+  }
+  std::string lib_path(info.dli_fname);
+  size_t last_slash = lib_path.find_last_of('/');
+  if (last_slash == std::string::npos) {
+    return {};
+  }
+  return lib_path.substr(0, last_slash);
+}
+
+static void load_android_backend_soname_fallback(
+    fllama_log_callback dart_logger) {
+  static const char *const candidates[] = {
+      "libggml-cpu-android_armv9.2_2.so",
+      "libggml-cpu-android_armv9.2_1.so",
+      "libggml-cpu-android_armv9.0_1.so",
+      "libggml-cpu-android_armv8.6_1.so",
+      "libggml-cpu-android_armv8.2_2.so",
+      "libggml-cpu-android_armv8.2_1.so",
+      "libggml-cpu-android_armv8.0_1.so",
+      "libggml-cpu-x64.so",
+  };
+
+  log_message("[fllama] No ggml backends loaded from path search; trying Android soname fallback.",
+              dart_logger);
+
+  for (const char *candidate : candidates) {
+    ggml_backend_reg_t reg = ggml_backend_load(candidate);
+    if (reg != nullptr) {
+      log_message("[fllama] Loaded ggml backend via soname: " +
+                      std::string(candidate),
+                  dart_logger);
+    }
+  }
+}
+
+static bool android_get_big_core_mask(bool *cpumask, int n_threads,
+                                      fllama_log_callback dart_logger) {
+  const int MAX_CPUS = 16;
+  int max_freq[MAX_CPUS] = {0};
+  int num_cpus = 0;
+
+  for (int i = 0; i < MAX_CPUS; i++) {
+    char path[128];
+    snprintf(path, sizeof(path),
+             "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", i);
+    FILE *f = fopen(path, "r");
+    if (!f) break;
+    if (fscanf(f, "%d", &max_freq[i]) == 1) {
+      num_cpus = i + 1;
+    }
+    fclose(f);
+  }
+
+  if (num_cpus < 2) return false;
+
+  int highest_freq = 0;
+  for (int i = 0; i < num_cpus; i++) {
+    if (max_freq[i] > highest_freq) highest_freq = max_freq[i];
+  }
+
+  int threshold = (int)(highest_freq * 0.70);
+  std::vector<int> big_cores;
+  for (int i = 0; i < num_cpus; i++) {
+    if (max_freq[i] >= threshold) {
+      big_cores.push_back(i);
+    }
+  }
+
+  if ((int)big_cores.size() < n_threads) return false;
+
+  memset(cpumask, 0, sizeof(bool) * GGML_MAX_N_THREADS);
+  for (int core : big_cores) {
+    if (core < GGML_MAX_N_THREADS) {
+      cpumask[core] = true;
+    }
+  }
+
+  std::string msg = "[fllama] Big-core affinity: using " +
+                    std::to_string(big_cores.size()) + "/" +
+                    std::to_string(num_cpus) + " cores (threshold=" +
+                    std::to_string(threshold / 1000) + "MHz, max=" +
+                    std::to_string(highest_freq / 1000) + "MHz): [";
+  for (size_t i = 0; i < big_cores.size(); i++) {
+    if (i > 0) msg += ",";
+    msg += std::to_string(big_cores[i]);
+  }
+  msg += "]";
+  log_message(msg, dart_logger);
+  return true;
+}
+#endif
 
 // Function to detect if a model is a Gemma 3 model
 static bool is_gemma3_model(const char *model_path) {
@@ -635,9 +740,61 @@ fllama_inference_sync(fllama_inference_request request,
   // Setup parameters, then load the model and create a context.
   int64_t start = ggml_time_ms();
   log_message("[fllama] Inference thread start", request.dart_logger);
+
+#if defined(__ANDROID__)
+  // Boost inference thread to high priority (-16 = ANDROID_PRIORITY_AUDIO).
+  // This keeps the scheduler from migrating us to little cores under load.
+  errno = 0;
+  if (setpriority(PRIO_PROCESS, 0, -16) == 0) {
+    log_message("[fllama] Thread priority boosted to AUDIO (-16)", request.dart_logger);
+  } else {
+    // -8 = ANDROID_PRIORITY_URGENT_DISPLAY, less privileged fallback
+    if (setpriority(PRIO_PROCESS, 0, -8) == 0) {
+      log_message("[fllama] Thread priority boosted to URGENT_DISPLAY (-8)", request.dart_logger);
+    }
+  }
+
+  // Pin this thread (and child threads inherit affinity) to big/performance cores.
+  {
+    bool mask[GGML_MAX_N_THREADS];
+    int n_thr = request.num_threads > 0 ? request.num_threads : 4;
+    if (android_get_big_core_mask(mask, n_thr, request.dart_logger)) {
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      for (int i = 0; i < GGML_MAX_N_THREADS; i++) {
+        if (mask[i]) CPU_SET(i, &cpuset);
+      }
+      if (sched_setaffinity(0, sizeof(cpuset), &cpuset) == 0) {
+        log_message("[fllama] CPU affinity set to big cores", request.dart_logger);
+      }
+    }
+  }
+#endif
+
   try {
-    ggml_backend_load_all();
-    log_message("[fllama] Backend initialized.", request.dart_logger);
+    // Backend loading must happen only once per process.
+    static bool backends_loaded = false;
+    if (!backends_loaded) {
+      log_message("[fllama] Loading backends...", request.dart_logger);
+  #if defined(__ANDROID__)
+      std::string backend_dir = get_android_native_library_dir();
+      if (!backend_dir.empty()) {
+        log_message("[fllama] Loading ggml backends from: " + backend_dir,
+              request.dart_logger);
+        ggml_backend_load_all_from_path(backend_dir.c_str());
+      } else {
+        ggml_backend_load_all();
+      }
+
+      if (ggml_backend_reg_count() == 0) {
+        load_android_backend_soname_fallback(request.dart_logger);
+      }
+  #else
+      ggml_backend_load_all();
+  #endif
+      backends_loaded = true;
+      log_message("[fllama] Backend initialized.", request.dart_logger);
+    }
     
     // List all available backends
     log_message("[fllama] Available backends:", request.dart_logger);
@@ -684,9 +841,14 @@ fllama_inference_sync(fllama_inference_request request,
 
     // TODO: params.n_predict = request.max_tokens;
     // std::cout << "[fllama] Max tokens: " << params.n_predict << std::endl;
-    // TODO: params.n_threads = request.num_threads;
-    // std::cout << "[fllama] Number of threads: " << params.n_threads <<
-    // std::endl;
+
+    // Apply thread count from request. On Android, use the request value
+    // (Dart passes an appropriate count based on platform core detection).
+    // Falls back to llama.cpp default if request says 0.
+    if (request.num_threads > 0) {
+        ctx_params.n_threads = request.num_threads;
+        ctx_params.n_threads_batch = request.num_threads;
+    }
     // Generate a random seed using std::random_device for better randomness
     std::random_device rd;
     uint32_t random_seed = rd();

@@ -11,12 +11,14 @@
 #include "../macos/llama.cpp/include/llama.h"
 #include "../macos/llama.cpp/common/base64.hpp"
 #include "../macos/llama.cpp/common/common.h"
+#include "../macos/llama.cpp/ggml/include/ggml-backend.h"
 #else
 // Other platforms
 #include "llama.h"
 #include "llama.cpp/common/common.h"
 #include "llama.cpp/common/base64.hpp"
 #include "ggml.h"
+#include "ggml-backend.h"
 #include "gguf.h"
 #endif
 
@@ -67,10 +69,16 @@ static struct clip_image_grid_shape get_anyres_image_grid_shape(const std::pair<
 }
 
 // Take the image segments in a grid configuration and return the embeddings and the number of embeddings into preallocated memory (image_embd_out)
-static bool clip_llava_handle_patches(clip_ctx * ctx_clip, std::vector<float *> & image_embd_v, struct clip_image_grid_shape grid_shape, float * image_embd_out, int * n_img_pos_out) {
+static bool clip_llava_handle_patches(clip_ctx * ctx_clip, std::vector<float *> & image_embd_v, struct clip_image_grid_shape grid_shape, int n_threads, float * image_embd_out, int * n_img_pos_out) {
     struct {
         struct ggml_context * ctx;
+        ggml_backend_t backend;
+        ggml_backend_buffer_t buffer;
     } model;
+
+    model.ctx = nullptr;
+    model.backend = nullptr;
+    model.buffer = nullptr;
 
     const int32_t image_size = clip_image_size(ctx_clip);
     const int32_t patch_size = clip_patch_size(ctx_clip);
@@ -93,7 +101,7 @@ static bool clip_llava_handle_patches(clip_ctx * ctx_clip, std::vector<float *> 
     struct ggml_init_params params {
         /*.mem_size   =*/ ctx_size,
         /*.mem_buffer =*/ NULL,
-        /*.no_alloc   =*/ false, // NOTE: this should be false when using the legacy API
+        /*.no_alloc   =*/ true,
     };
 
     // Python reference code for full unpad:
@@ -129,13 +137,32 @@ static bool clip_llava_handle_patches(clip_ctx * ctx_clip, std::vector<float *> 
     */
 
     model.ctx = ggml_init(params);
+    if (!model.ctx) {
+        LOG_ERR("%s: failed to initialize ggml context\n", __func__);
+        return false;
+    }
+
+    model.backend = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, nullptr);
+    if (!model.backend) {
+        LOG_ERR("%s: failed to initialize CPU backend\n", __func__);
+        ggml_free(model.ctx);
+        return false;
+    }
+
+    ggml_backend_dev_t dev = ggml_backend_get_device(model.backend);
+    ggml_backend_reg_t reg = dev ? ggml_backend_dev_backend_reg(dev) : nullptr;
+    if (reg) {
+        auto ggml_backend_set_n_threads_fn = (ggml_backend_set_n_threads_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_set_n_threads");
+        if (ggml_backend_set_n_threads_fn) {
+            ggml_backend_set_n_threads_fn(model.backend, n_threads);
+        }
+    }
 
     struct ggml_tensor * image_features = ggml_new_tensor_3d(model.ctx, GGML_TYPE_F32, clip_n_mmproj_embd(ctx_clip), clip_n_patches(ctx_clip), num_images - 1); // example: 4096 x 576 x 4
-    // ggml_tensor_printf(image_features,"image_features",__LINE__,false,false);
-    // fill it with the image embeddings, ignoring the base
+    std::vector<uint8_t> image_features_data(clip_embd_nbytes(ctx_clip) * (num_images - 1));
     for (size_t i = 1; i < num_images; i++) {
-        size_t offset = (i-1) * clip_embd_nbytes(ctx_clip);
-        memcpy((uint8_t *)(image_features->data) + offset, image_embd_v[i], clip_embd_nbytes(ctx_clip));
+        size_t offset = (i - 1) * clip_embd_nbytes(ctx_clip);
+        memcpy(image_features_data.data() + offset, image_embd_v[i], clip_embd_nbytes(ctx_clip));
     }
 
     struct ggml_cgraph  * gf = ggml_new_graph(model.ctx);
@@ -164,12 +191,31 @@ static bool clip_llava_handle_patches(clip_ctx * ctx_clip, std::vector<float *> 
     struct ggml_tensor *flatten = ggml_view_2d(model.ctx, permuted_cont, clip_n_mmproj_embd(ctx_clip), num_patches_height * num_patches_width * num_patches_per_side * num_patches_per_side,  size_ele * clip_n_mmproj_embd(ctx_clip), 0);
     // ggml_tensor_printf(flatten,"flatten",__LINE__,false,false);
     ggml_build_forward_expand(gf, flatten);
-    ggml_graph_compute_with_ctx(model.ctx, gf, 1);
+
+    model.buffer = ggml_backend_alloc_ctx_tensors(model.ctx, model.backend);
+    if (!model.buffer) {
+        LOG_ERR("%s: failed to allocate backend tensors\n", __func__);
+        ggml_backend_free(model.backend);
+        ggml_free(model.ctx);
+        return false;
+    }
+
+    ggml_backend_tensor_set(image_features, image_features_data.data(), 0, image_features_data.size());
+
+    enum ggml_status status = ggml_backend_graph_compute(model.backend, gf);
+    if (status != GGML_STATUS_SUCCESS) {
+        LOG_ERR("%s: ggml_backend_graph_compute failed with error %d\n", __func__, status);
+        ggml_backend_buffer_free(model.buffer);
+        ggml_backend_free(model.backend);
+        ggml_free(model.ctx);
+        return false;
+    }
+
     struct ggml_tensor* result = ggml_graph_node(gf, -1);
 
     memcpy(image_embd_out, image_embd_v[0], clip_embd_nbytes(ctx_clip)); // main image as global context
     // append without newline tokens (default behavior in llava_arch when not using unpad ):
-    memcpy(image_embd_out + clip_n_patches(ctx_clip) * clip_n_mmproj_embd(ctx_clip), (float*)result->data, clip_embd_nbytes(ctx_clip) * (num_images-1)); // grid patches
+    ggml_backend_tensor_get(result, image_embd_out + clip_n_patches(ctx_clip) * clip_n_mmproj_embd(ctx_clip), 0, clip_embd_nbytes(ctx_clip) * (num_images - 1)); // grid patches
     *n_img_pos_out = static_cast<int>(result->ne[1]+clip_n_patches(ctx_clip));
 
     // Debug: Test single segments
@@ -179,6 +225,8 @@ static bool clip_llava_handle_patches(clip_ctx * ctx_clip, std::vector<float *> 
     // memcpy(image_embd_out, (float*)prepared_cont->data, clip_embd_nbytes(ctx_clip)); // main image as context
     // *n_img_pos_out=576;
 
+    ggml_backend_buffer_free(model.buffer);
+    ggml_backend_free(model.backend);
     ggml_free(model.ctx);
     return true;
 }
@@ -337,7 +385,7 @@ static bool encode_image_with_clip(clip_ctx * ctx_clip, int n_threads, const cli
         struct clip_image_grid_shape grid_shape = get_anyres_image_grid_shape({img->nx,img->ny}, grid_pinpoints, image_size);
 
         int n_img_pos_out;
-        clip_llava_handle_patches(ctx_clip, image_embd_v, grid_shape, image_embd, &n_img_pos_out);
+        clip_llava_handle_patches(ctx_clip, image_embd_v, grid_shape, n_threads, image_embd, &n_img_pos_out);
         *n_img_pos = n_img_pos_out;
 
         for (size_t i = 0; i < image_embd_v.size(); i++) {

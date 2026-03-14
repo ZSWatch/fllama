@@ -140,8 +140,8 @@ class OpenAiRequest {
     // Number of layers to run on GPU. 0 means all layers on CPU. 99 means all
     // layers on GPU.
     this.numGpuLayers = 0,
-    // Number of CPU threads to use for inference and prompt processing.
-    this.numThreads = 2,
+    // Number of inference threads. 0 = let llama.cpp pick the default.
+    this.numThreads = 0,
     // ultra-safe for mobile inference, but rather small: ChatGPT launched with
     // 4096, today it has 16384. 1000 tokens ~= 3 pages ~= 750 words ~= 3
     // minutes reading time.
