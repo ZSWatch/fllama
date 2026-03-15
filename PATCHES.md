@@ -19,6 +19,9 @@ The app uses both `fllama` and `whisper_ggml_plus` on iOS. Both dependencies ven
 5. `ios/fllama.podspec`
    - Set iOS minimum deployment target to 14.0.
    - Disable Xcode header maps for the `fllama` pod target to keep `ggml` headers isolated.
+6. Force CPU-only inference at runtime.
+   - `src/fllama.cpp`: Always set `n_gpu_layers = 0` (removed simulator conditional and `llama_supports_gpu_offload()` checks). Metal is still compiled in but never used.
+   - Deleted `ios/default.metallib` (pre-compiled Metal kernels — Metal shaders are now embedded in the library via `GGML_METAL_EMBED_LIBRARY`).
 
 ## Maintenance
 

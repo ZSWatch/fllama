@@ -873,22 +873,8 @@ fllama_inference_sync(fllama_inference_request request,
     //   params.sparams.grammar = std::string(request.grammar);
     // }
     // std::cout << "[fllama] Model path: " << params.model << std::endl;
-// Force CPU if iOS simulator: no GPU support available, hangs.
-#if TARGET_IPHONE_SIMULATOR
+    // CPU-only inference — Metal GPU backend is disabled at build time.
     model_params.n_gpu_layers = 0;
-// Otherwise, for physical iOS devices and other platforms
-#else
-    model_params.n_gpu_layers = request.num_gpu_layers;
-    log_message("[fllama] Number of GPU layers requested: " + std::to_string(model_params.n_gpu_layers), request.dart_logger);
-    
-    // Check if GPU offload is actually supported
-    if (llama_supports_gpu_offload()) {
-        log_message("[fllama] GPU offload IS supported!", request.dart_logger);
-    } else {
-        log_message("[fllama] WARNING: GPU offload NOT supported!", request.dart_logger);
-        log_message("[fllama] This means Metal backend is not available.", request.dart_logger);
-    }
-#endif
     // Check if a Dart logger function is provided, use it if available.
     if (request.dart_logger != NULL) {
       log_message("[fllama] Request log callback for llama.cpp detected", request.dart_logger);
@@ -1007,7 +993,6 @@ fllama_inference_sync(fllama_inference_request request,
       
       // Note: The ModelHandle will automatically decrement users and handle cleanup
       // We don't need to manually free model or context - the handle manages it
-      llama_backend_free();
       // c_result is freed automatically by unique_ptr
     };
     // Process OpenAI chat messages if provided

@@ -7,12 +7,14 @@
 #include <thread>
 
 // Default timeout values (can be overridden before creating InferenceQueue)
-int InferenceQueue::MODEL_INACTIVITY_TIMEOUT_SEC = 15;
+int InferenceQueue::MODEL_INACTIVITY_TIMEOUT_SEC = 120;
 int InferenceQueue::CLEANUP_INTERVAL_SEC = 30;
 
 // If fllama_inference_request and fllama_inference_callback types are defined
 // in an external header, include that here.
 InferenceQueue::InferenceQueue() {
+  std::cout << "[InferenceQueue] BUILD_MARKER: inactivity_timeout=" << MODEL_INACTIVITY_TIMEOUT_SEC
+            << "s, cleanup_interval=" << CLEANUP_INTERVAL_SEC << "s" << std::endl;
   // Initialize threads after all other member variables are set
   worker = std::thread(&InferenceQueue::process_inference, this);
   cleanup_thread = std::thread(&InferenceQueue::cleanup_inactive_models, this);
@@ -119,6 +121,11 @@ void InferenceQueue::release_model_handle(const std::string& model_path) {
   auto it = cached_models.find(model_path);
   if (it != cached_models.end()) {
     auto& resources = it->second;
+    
+    // Update last_used BEFORE state change so the cleanup thread never sees
+    // state=IDLE with a stale last_used timestamp.
+    resources->last_used = std::chrono::steady_clock::now();
+    
     int prev = resources->active_users.fetch_sub(1, std::memory_order_acq_rel);
     
     if (prev == 1) {
@@ -135,8 +142,6 @@ void InferenceQueue::release_model_handle(const std::string& model_path) {
       std::cerr << "[InferenceQueue] ERROR: Attempted to decrement user count for " 
                 << model_path << " but count was already 0. This indicates a logic error!" << std::endl;
     }
-    
-    resources->last_used = std::chrono::steady_clock::now();
   }
 }
 
@@ -320,6 +325,18 @@ std::shared_ptr<ModelResources> InferenceQueue::extract_model_if_inactive(const 
   if (it != cached_models.end()) {
     auto& resources = it->second;
     
+    // Re-check inactivity timeout — last_used may have been updated since
+    // the caller first checked (e.g. inference completed between the check
+    // and this extraction attempt).
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        now - resources->last_used).count();
+    if (elapsed < MODEL_INACTIVITY_TIMEOUT_SEC) {
+      std::cout << "[InferenceQueue] Model " << model_path
+                << " was recently used (" << elapsed << "s ago), skipping cleanup" << std::endl;
+      return nullptr;
+    }
+    
     // Check users first with acquire ordering
     int users = resources->active_users.load(std::memory_order_acquire);
     if (users > 0) {
@@ -392,6 +409,9 @@ void InferenceQueue::cleanup_inactive_models() {
         int users = resources->active_users.load(std::memory_order_acquire);
         
         if (elapsed >= MODEL_INACTIVITY_TIMEOUT_SEC && state == ModelState::IDLE && users == 0) {
+          std::cout << "[InferenceQueue] Model " << path
+                    << " idle for " << elapsed << "s (timeout=" << MODEL_INACTIVITY_TIMEOUT_SEC
+                    << "s) - scheduling for cleanup" << std::endl;
           paths_to_check.push_back(path);
         } else if (elapsed >= MODEL_INACTIVITY_TIMEOUT_SEC) {
           std::cout << "[InferenceQueue] Model " << path 
@@ -415,8 +435,28 @@ void InferenceQueue::cleanup_inactive_models() {
     // Free the extracted models outside the lock to prevent deadlock
     for (auto& resources : models_to_free) {
       std::cout << "[InferenceQueue] Freeing model resources for: " << resources->path << std::endl;
-      if (resources->ctx) llama_free(resources->ctx);
-      if (resources->model) llama_model_free(resources->model);
+      auto free_start = std::chrono::steady_clock::now();
+      if (resources->ctx) {
+        std::cout << "[InferenceQueue] Freeing context..." << std::endl;
+        llama_free(resources->ctx);
+        auto ctx_done = std::chrono::steady_clock::now();
+        std::cout << "[InferenceQueue] Context freed in " 
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(ctx_done - free_start).count()
+                  << "ms" << std::endl;
+      }
+      if (resources->model) {
+        std::cout << "[InferenceQueue] Freeing model..." << std::endl;
+        auto model_start = std::chrono::steady_clock::now();
+        llama_model_free(resources->model);
+        auto model_done = std::chrono::steady_clock::now();
+        std::cout << "[InferenceQueue] Model freed in "
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(model_done - model_start).count()
+                  << "ms" << std::endl;
+      }
+      auto free_done = std::chrono::steady_clock::now();
+      std::cout << "[InferenceQueue] Total free time: "
+                << std::chrono::duration_cast<std::chrono::milliseconds>(free_done - free_start).count()
+                << "ms" << std::endl;
       // shared_ptr will handle deletion of ModelResources
     }
   }

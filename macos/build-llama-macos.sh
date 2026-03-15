@@ -47,8 +47,8 @@ if [ ! -d "llama.cpp/build-macos" ]; then
         -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
         -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15 \
         -DBUILD_SHARED_LIBS=OFF \
-        -DGGML_METAL=ON \
-        -DGGML_METAL_EMBED_LIBRARY=ON \
+        -DGGML_METAL=OFF \
+        -DGGML_METAL_EMBED_LIBRARY=OFF \
         -DLLAMA_HTTPLIB=OFF \
         -DLLAMA_CURL=OFF \
         -DLLAMA_BUILD_SERVER=OFF \
