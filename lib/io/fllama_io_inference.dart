@@ -222,18 +222,28 @@ void fllamaCancelInference(int requestId) async {
   helperIsolateSendPort.send(isolateCancel);
 }
 
-// GLOBAL map to keep logger callbacks alive across ALL isolate invocations
-final Map<int, NativeCallable> _globalLoggerCallbacks = {};
+// Keep native callbacks alive across queued requests until native code is done
+// with them. fllama_inference() returns immediately and does its work on a
+// background C++ queue, so request-scoped locals are not sufficient here.
+final Map<int, NativeCallable<FllamaLogCallbackNative>>
+  _globalLoggerCallbacks =
+  <int, NativeCallable<FllamaLogCallbackNative>>{};
+final Map<int, NativeCallable<NativeInferenceCallback>>
+  _globalInferenceCallbacks =
+  <int, NativeCallable<NativeInferenceCallback>>{};
 
 // Track completed request IDs so we can clean up their logger callbacks safely
 final Set<int> _completedRequestIds = {};
 
-/// Clean up logger callbacks for completed requests.
+/// Clean up native callbacks for completed requests.
 /// Called before starting a new request to prevent unbounded memory growth.
-void _cleanupCompletedLoggerCallbacks() {
+void _cleanupCompletedNativeCallbacks() {
   for (final id in _completedRequestIds) {
-    final callback = _globalLoggerCallbacks.remove(id);
-    callback?.close();
+    final loggerCallback = _globalLoggerCallbacks.remove(id);
+    loggerCallback?.close();
+
+    final inferenceCallback = _globalInferenceCallbacks.remove(id);
+    inferenceCallback?.close();
   }
   _completedRequestIds.clear();
 }
@@ -254,7 +264,7 @@ void _fllamaInferenceIsolate(SendPort sendPort) async {
 
       // Clean up logger callbacks from previously completed requests
       // This is safe because at this point those requests are fully done on the C++ side
-      _cleanupCompletedLoggerCallbacks();
+      _cleanupCompletedNativeCallbacks();
       
       final nativeRequestPointer = _toNative(data.request, data.id, _globalLoggerCallbacks, sendPort);
       final nativeRequest = nativeRequestPointer.ref;
@@ -348,6 +358,7 @@ void _fllamaInferenceIsolate(SendPort sendPort) async {
       }
 
       callback = NativeCallable<NativeInferenceCallback>.listener(onResponse);
+      _globalInferenceCallbacks[data.id] = callback;
 
       fllamaBindings.fllama_inference(
         nativeRequest,

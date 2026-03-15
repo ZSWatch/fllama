@@ -875,20 +875,21 @@ fllama_inference_sync(fllama_inference_request request,
     // std::cout << "[fllama] Model path: " << params.model << std::endl;
     // CPU-only inference — Metal GPU backend is disabled at build time.
     model_params.n_gpu_layers = 0;
-    // Check if a Dart logger function is provided, use it if available.
+    // Always use the C++ log callback for llama.cpp's internal logging.
+    // Never install a Dart NativeCallable as the global llama_log_set callback:
+    //  1. SIGABRT on hot-restart: the cleanup thread calls llama_free() which
+    //     logs through a stale Dart callback destroyed when the isolate restarted.
+    //  2. Dangling pointers: llama_log_set passes temporary const char* pointers
+    //     from llama.cpp internals; NativeCallable.listener is async so the data
+    //     may be freed before the Dart side reads it.
+    //  3. Performance: hundreds of internal llama.cpp log messages during model
+    //     loading get routed through the async Dart callback pipeline, flooding
+    //     the helper-isolate and main-isolate event loops.
+    // fllama's own log_message() calls still use dart_logger (with safe
+    // deque-backed string storage) for important messages.
+    llama_log_set(log_callback_wrapper, NULL);
     if (request.dart_logger != NULL) {
-      log_message("[fllama] Request log callback for llama.cpp detected", request.dart_logger);
-      llama_log_set(
-          [](enum ggml_log_level level, const char *text, void *user_data) {
-            fllama_log_callback dart_logger =
-                reinterpret_cast<fllama_log_callback>(user_data);
-            dart_logger(text);
-          },
-          reinterpret_cast<void *>(request.dart_logger));
-      log_message("[fllama] Request log callback installed for llama.cpp.", request.dart_logger);
-    } else {
-      log_message("[fllama] fllama default log callback installed for llama.cpp.", request.dart_logger);
-      llama_log_set(log_callback_wrapper, NULL);
+      log_message("[fllama] C++ logger active for llama.cpp internals; Dart logger for fllama messages", request.dart_logger);
     }
     // By default, llama.cpp emits a llama.log file containing ex. ~20 highest
     // probability tokens and the tokens selected. This is interesting, but,
