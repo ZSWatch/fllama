@@ -9,9 +9,12 @@ class ToolFunction {
   });
 }
 
-const exampleQaExtractFunction = ToolFunction(name: 'problems', description: '''
+const exampleQaExtractFunction = ToolFunction(
+  name: 'problems',
+  description: '''
 Problems, such as short answer problems or multiple choice questions, extracted from general text. Question, paired with any answer choices provided explicitly in the text.
-''', parametersAsString: '''
+''',
+  parametersAsString: '''
 {
  "type": "object",
  "properties": {
@@ -32,7 +35,8 @@ Problems, such as short answer problems or multiple choice questions, extracted 
   }
  },
  "required": ["problems"]
-}''');
+}''',
+);
 
 const exampleFlashcardFunction = ToolFunction(
   name: 'flashcards',
@@ -65,10 +69,10 @@ Use this function to provide flashcards extracted from the previous text. Phrase
 );
 
 const exampleSearchQueriesFunction = ToolFunction(
-    name: 'search_queries',
-    description: '''
+  name: 'search_queries',
+  description: '''
 Search queries are the queries that you would use to search for the previous text. They are often used for studying, but more generally, to learn to recall information.''',
-    parametersAsString: '''
+  parametersAsString: '''
 {
  "type": "object",
  "properties": {
@@ -86,13 +90,14 @@ Search queries are the queries that you would use to search for the previous tex
   }
  },
 "required": ["search_query_0", "search_query_1", "search_query_2"] 
-}''');
+}''',
+);
 
 const exampleOneSearchQueryFunction = ToolFunction(
-    name: 'search_query',
-    description: '''
+  name: 'search_query',
+  description: '''
 Search queries are the queries that you would use to search for the previous text. They are often used for studying, but more generally, to learn to recall information.''',
-    parametersAsString: '''
+  parametersAsString: '''
 {
  "type": "object",
  "properties": {
@@ -102,7 +107,8 @@ Search queries are the queries that you would use to search for the previous tex
   }
  },
  "required": ["search_query"] 
-}''');
+}''',
+);
 
 const exampleSentimentListFunction = ToolFunction(
   name: 'sentiment_analysis',

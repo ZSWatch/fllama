@@ -12,7 +12,7 @@
 /// Recognizing the model via their special chat template tokens allows us to
 /// A) override erroneous templates
 /// B) inject special prompts to show the model how to end its messages.
-/// 
+///
 /// Note: re-added for bartowski's llama 3.2 8B: see comment in footer of file
 /// with jinja template that cannot be parsed by the current implementation
 /// of the Dart jinja package. (2024-11-03)

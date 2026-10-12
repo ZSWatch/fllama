@@ -6,10 +6,12 @@ import 'package:fllama/fllama.dart';
 
 @JS('fllamaInferenceJs')
 external JSPromise<JSNumber> fllamaInferenceJs(
-    JSAny request, JSFunction callback);
+  JSAny request,
+  JSFunction callback,
+);
 
-typedef FllamaInferenceCallback = void Function(
-    String response, String openaiResponseJsonString, bool done);
+typedef FllamaInferenceCallback =
+    void Function(String response, String openaiResponseJsonString, bool done);
 
 // Keep in sync with fllama_inference_request.dart to pass correctly from Dart to JS
 extension type _JSFllamaInferenceRequest._(JSObject _) implements JSObject {
@@ -38,8 +40,10 @@ extension type _JSFllamaInferenceRequest._(JSObject _) implements JSObject {
 /// This is *not* what most people want to use. LLMs post-ChatGPT use a chat
 /// template and an EOS token. Use [fllamaChat] instead if you expect this
 /// sort of interface, i.e. an OpenAI-like API.
-Future<int> fllamaInference(FllamaInferenceRequest dartRequest,
-    FllamaInferenceCallback callback) async {
+Future<int> fllamaInference(
+  FllamaInferenceRequest dartRequest,
+  FllamaInferenceCallback callback,
+) async {
   final jsRequest = _JSFllamaInferenceRequest(
     contextSize: dartRequest.contextSize,
     input: dartRequest.input,
@@ -76,10 +80,11 @@ external JSPromise<JSBoolean> fllamaMlcIsWebModelDownloadedJs(String modelId);
 
 @JS('fllamaChatMlcWebJs')
 external JSPromise<JSNumber> fllamaChatMlcWebJs(
-    // ignore: library_private_types_in_public_api
-    _JSFllamaMlcInferenceRequest request,
-    JSFunction loadCallback,
-    JSFunction callback);
+  // ignore: library_private_types_in_public_api
+  _JSFllamaMlcInferenceRequest request,
+  JSFunction loadCallback,
+  JSFunction callback,
+);
 
 extension type _JSFllamaMlcInferenceRequest._(JSObject _) implements JSObject {
   external _JSFllamaMlcInferenceRequest({
@@ -95,8 +100,8 @@ extension type _JSFllamaMlcInferenceRequest._(JSObject _) implements JSObject {
   });
 }
 
-typedef FllamaMlcLoadCallback = void Function(
-    double downloadProgress, double loadProgress);
+typedef FllamaMlcLoadCallback =
+    void Function(double downloadProgress, double loadProgress);
 
 Future<bool> fllamaMlcIsWebModelDownloaded(String modelId) async {
   return fllamaMlcIsWebModelDownloadedJs(modelId).toDart.then((value) {
@@ -112,24 +117,24 @@ Future<bool> fllamaMlcIsWebModelDownloaded(String modelId) async {
 ///
 /// MLC uses WebGPU to achieve ~native inference speeds.
 Future<int> fllamaChatMlcWeb(
-    OpenAiRequest request,
-    FllamaMlcLoadCallback loadCallback,
-    FllamaInferenceCallback callback) async {
+  OpenAiRequest request,
+  FllamaMlcLoadCallback loadCallback,
+  FllamaInferenceCallback callback,
+) async {
   final messagesAsMaps = request.messages
-      .map((e) => {
-            'role': e.role.openAiName,
-            'content': e.text,
-          })
+      .map((e) => {'role': e.role.openAiName, 'content': e.text})
       .toList();
   final toolsAsMaps = request.tools
-      .map((e) => {
-            'type': 'function',
-            'function': {
-              'name': e.name,
-              'description': e.description,
-              'parameters': e.jsonSchema,
-            }
-          })
+      .map(
+        (e) => {
+          'type': 'function',
+          'function': {
+            'name': e.name,
+            'description': e.description,
+            'parameters': e.jsonSchema,
+          },
+        },
+      )
       .toList();
   final jsRequest = _JSFllamaMlcInferenceRequest(
     toolsAsJsonString: jsonEncode(toolsAsMaps),
@@ -150,9 +155,11 @@ Future<int> fllamaChatMlcWeb(
     callback(response, responseJson, done);
   }
 
-  fllamaChatMlcWebJs(jsRequest, firstCallback.toJS, secondCallback.toJS)
-      .toDart
-      .then((value) {
+  fllamaChatMlcWebJs(
+    jsRequest,
+    firstCallback.toJS,
+    secondCallback.toJS,
+  ).toDart.then((value) {
     completer.complete(value.toDartInt);
   });
   return completer.future;

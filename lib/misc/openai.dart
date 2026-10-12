@@ -25,6 +25,7 @@ enum Role {
 class Message {
   final Role role;
   final String text;
+
   /// Optional name of tool in the message.
   final String? toolResponseName;
   final List<Map<String, dynamic>>? toolCalls;
@@ -72,6 +73,7 @@ class OpenAiRequest {
   final String? jinjaTemplate;
   final Function(String)? logger;
   final ToolChoice? toolChoice;
+
   /// When false, disables reasoning/thinking for models that support it
   /// (e.g. Qwen3/3.5). Defaults to true (model decides).
   final bool enableThinking;
@@ -79,17 +81,17 @@ class OpenAiRequest {
   String toJsonString() {
     final Map<String, dynamic> json = {
       'messages': messages
-          .map((m) => {
-                'role': m.role.openAiName,
-                // Avoid empty content, intent is when there's a tool call,
-                // but no text, in an assistant response, two messages are not
-                // created.
-                if (m.text.trim().isNotEmpty)
-                 'content': m.text,
-                if (m.toolResponseName != null) 'name': m.toolResponseName,
-                if (m.toolCalls?.isNotEmpty == true)
-                  'tool_calls': m.toolCalls
-              })
+          .map(
+            (m) => {
+              'role': m.role.openAiName,
+              // Avoid empty content, intent is when there's a tool call,
+              // but no text, in an assistant response, two messages are not
+              // created.
+              if (m.text.trim().isNotEmpty) 'content': m.text,
+              if (m.toolResponseName != null) 'name': m.toolResponseName,
+              if (m.toolCalls?.isNotEmpty == true) 'tool_calls': m.toolCalls,
+            },
+          )
           .toList(),
       'tools': tools.map((t) {
         return {

@@ -5,10 +5,11 @@ import 'package:fllama/fllama.dart';
 import 'package:fllama/fllama_io.dart';
 import 'package:fllama/io/fllama_io_helpers.dart';
 
-typedef FllamaInferenceCallback = void Function(String response, String openaiResponseJsonString, bool done);
-typedef FllamaMlcLoadCallback = void Function(
-    double downloadProgress, double loadProgress);
-    
+typedef FllamaInferenceCallback =
+    void Function(String response, String openaiResponseJsonString, bool done);
+typedef FllamaMlcLoadCallback =
+    void Function(double downloadProgress, double loadProgress);
+
 /// Returns the chat template embedded in the .gguf file.
 /// If none is found, returns an empty string.
 ///
@@ -50,7 +51,9 @@ Future<String> fllamaEosTokenGet(String modelPath) {
 /// template and an EOS token. Use [fllamaChat] instead if you expect this
 /// sort of interface, i.e. an OpenAI-like API.
 Future<int> fllamaInference(
-    FllamaInferenceRequest request, FllamaInferenceCallback callback) async {
+  FllamaInferenceRequest request,
+  FllamaInferenceCallback callback,
+) async {
   throw UnimplementedError();
 }
 
@@ -62,17 +65,18 @@ Future<int> fllamaInference(
 ///
 /// MLC uses WebGPU to achieve ~native inference speeds.
 Future<int> fllamaChatMlcWeb(
-    OpenAiRequest request,
-    FllamaMlcLoadCallback loadCallback,
-    FllamaInferenceCallback callback) async {
+  OpenAiRequest request,
+  FllamaMlcLoadCallback loadCallback,
+  FllamaInferenceCallback callback,
+) async {
   throw UnimplementedError();
 }
 
-Future<void> fllamaMlcWebModelDelete(String modelId) async {  
+Future<void> fllamaMlcWebModelDelete(String modelId) async {
   throw UnimplementedError();
 }
 
-Future<bool> fllamaMlcIsWebModelDownloaded(String modelId) async {  
+Future<bool> fllamaMlcIsWebModelDownloaded(String modelId) async {
   throw UnimplementedError();
 }
 

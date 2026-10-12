@@ -211,7 +211,9 @@ class TestModelManager {
       print('Model moved to final destination: $destPath');
       return file;
     } on DioException catch (dioError, s) {
-      print('Dio error downloading model: ${dioError.message}. $dioError. Stack: $s');
+      print(
+        'Dio error downloading model: ${dioError.message}. $dioError. Stack: $s',
+      );
       if (dioError.response != null) {
         print('Status code: ${dioError.response?.statusCode}');
         print('Response data: ${dioError.response?.data}');

@@ -28,7 +28,7 @@ void logTest(String message) {
 
   handler(String token, String openaiResponseJsonString, bool done) {
     outputBuffer.write(token);
-    
+
     // Track first non-empty response
     if (!hasReceivedFirstResponse && token.isNotEmpty) {
       firstResponseTime = DateTime.now();
@@ -47,7 +47,7 @@ void logTest(String message) {
       completionCompleter.complete(fullOutput);
 
       // Only show first 500 chars to avoid massive output
-      final preview = fullOutput.length > 500 
+      final preview = fullOutput.length > 500
           ? '${fullOutput.substring(0, 500)}... (${fullOutput.length} total chars)'
           : fullOutput;
       logTest('Final output:\n```\n$preview\n```');

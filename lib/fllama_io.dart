@@ -10,9 +10,10 @@ import 'package:fllama/io/fllama_bindings_generated.dart';
 import 'package:fllama/io/fllama_io_helpers.dart';
 import 'package:fllama/misc/openai.dart';
 
-typedef FllamaInferenceCallback = void Function(String response, String openaiResponseJsonString, bool done);
-typedef FllamaMlcLoadCallback = void Function(
-    double downloadProgress, double loadProgress);
+typedef FllamaInferenceCallback =
+    void Function(String response, String openaiResponseJsonString, bool done);
+typedef FllamaMlcLoadCallback =
+    void Function(double downloadProgress, double loadProgress);
 
 /// The dynamic library in which the symbols for [FllamaBindings] can be found.
 final DynamicLibrary fllamaDylib = () {
@@ -42,8 +43,9 @@ Future<String> fllamaChatTemplateGet(String modelPath) {
   // - Phi 2 has no template, either intended or in the model.
   // - Mistral 7B via OpenHermes has no template and intends ChatML.
   final filenamePointer = stringToPointerChar(modelPath);
-  final templatePointer =
-      fllamaBindings.fllama_get_chat_template(filenamePointer);
+  final templatePointer = fllamaBindings.fllama_get_chat_template(
+    filenamePointer,
+  );
   calloc.free(filenamePointer);
   if (templatePointer == nullptr) {
     return Future.value('');
@@ -90,24 +92,28 @@ Future<String> fllamaBosTokenGet(String modelPath) async {
 ///
 /// MLC uses WebGPU to achieve ~native inference speeds.
 Future<int> fllamaChatMlcWeb(
-    OpenAiRequest request,
-    FllamaMlcLoadCallback loadCallback,
-    FllamaInferenceCallback callback) async {
+  OpenAiRequest request,
+  FllamaMlcLoadCallback loadCallback,
+  FllamaInferenceCallback callback,
+) async {
   // ignore: avoid_print
   print(
-      'WARNING: called fllamaChatMlcWeb on native platform. Using fllamaChat instead.');
+    'WARNING: called fllamaChatMlcWeb on native platform. Using fllamaChat instead.',
+  );
   return fllamaChat(request, callback);
 }
 
 Future<void> fllamaMlcWebModelDelete(String modelId) async {
   // ignore: avoid_print
   print(
-      'WARNING: called fllamaMlcWebModelDelete on native platform. Ignoring.');
+    'WARNING: called fllamaMlcWebModelDelete on native platform. Ignoring.',
+  );
 }
 
 Future<bool> fllamaMlcIsWebModelDownloaded(String modelId) async {
   // ignore: avoid_print
   print(
-      'WARNING: called fllamaMlcIsWebModelDownloaded on native platform. Returning false.');
+    'WARNING: called fllamaMlcIsWebModelDownloaded on native platform. Returning false.',
+  );
   return false;
 }
