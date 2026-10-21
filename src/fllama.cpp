@@ -34,6 +34,14 @@
 
 #include "ggml-backend.h"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+#if defined(__ANDROID__)
+#include <sched.h>
+#include <sys/resource.h>
+#endif
+
 // ── Logging ──────────────────────────────────────────────────────────────────
 
 static constexpr bool kLogVerboseDebugMessages = false;
@@ -117,6 +125,51 @@ static bool fllama_error_requires_backend_recreation(const std::string &msg) {
          msg.find("out of memory") != std::string::npos;
 }
 
+#if defined(__ANDROID__)
+// ZSWatch: pin inference to the big cores and raise its priority so the
+// scheduler does not move it to little cores. Threads created later (the
+// server loop and ggml workers) inherit both.
+static void android_boost_inference_thread(int n_threads,
+                                           fllama_log_callback logger) {
+  if (setpriority(PRIO_PROCESS, 0, -16) == 0 ||
+      setpriority(PRIO_PROCESS, 0, -8) == 0) {
+    log_message("[fllama] Thread priority boosted", logger);
+  }
+
+  const int max_cpus = 16;
+  int max_freq[max_cpus] = {0};
+  int num_cpus = 0;
+  for (int i = 0; i < max_cpus; i++) {
+    char path[128];
+    snprintf(path, sizeof(path),
+             "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", i);
+    FILE *f = fopen(path, "r");
+    if (!f) break;
+    if (fscanf(f, "%d", &max_freq[i]) == 1) num_cpus = i + 1;
+    fclose(f);
+  }
+  if (num_cpus < 2) return;
+
+  int highest = *std::max_element(max_freq, max_freq + num_cpus);
+  int threshold = (int)(highest * 0.70);
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  int n_big = 0;
+  std::string cores;
+  for (int i = 0; i < num_cpus; i++) {
+    if (max_freq[i] >= threshold) {
+      CPU_SET(i, &cpuset);
+      cores += (n_big++ ? "," : "") + std::to_string(i);
+    }
+  }
+  if (n_big < (n_threads > 0 ? n_threads : 4)) return;
+  if (sched_setaffinity(0, sizeof(cpuset), &cpuset) == 0) {
+    log_message("[fllama] CPU affinity set to big cores [" + cores + "]",
+                logger);
+  }
+}
+#endif
+
 // ── The actual inference logic (runs on per-request thread) ──────────────────
 
 static void run_inference(fllama_inference_request request,
@@ -124,6 +177,10 @@ static void run_inference(fllama_inference_request request,
   try {
     int64_t t0 = ggml_time_ms();
     log_message("[fllama] Inference start", request.dart_logger);
+
+#if defined(__ANDROID__)
+    android_boost_inference_thread(request.num_threads, request.dart_logger);
+#endif
 
     // One-time backend init.
     fllama_backends_init_once();
@@ -138,8 +195,14 @@ static void run_inference(fllama_inference_request request,
     params.n_batch          = std::min<int32_t>(request.context_size, 2048);
     params.n_ubatch         = std::min<int32_t>(params.n_batch, 512);
     params.flash_attn_type  = LLAMA_FLASH_ATTN_TYPE_AUTO;
+#if TARGET_OS_IPHONE || defined(__ANDROID__)
+    // ZSWatch: one slot, so the whole context is available to one request
+    // (slots split n_ctx) and phones don't pay for unused KV cache.
+    params.n_parallel       = 1;
+#else
     params.n_parallel       = ServerManager::DEFAULT_N_PARALLEL;
-    params.n_predict        = request.max_tokens;
+#endif
+    params.n_predict       = request.max_tokens;
     params.sampling.temp    = request.temperature;
     params.sampling.top_p   = request.top_p;
     params.sampling.penalty_freq   = request.penalty_freq;
@@ -154,7 +217,9 @@ static void run_inference(fllama_inference_request request,
     // this only controls the EXTRA host-RAM cache from PR #16391.
     params.cache_ram_mib = 0;
 
-#if TARGET_IPHONE_SIMULATOR
+#if TARGET_OS_IPHONE
+    // ZSWatch: iOS runs inference in the background, where GPU work is not
+    // allowed, so iOS is CPU-only (Metal is also off in the build hook).
     params.n_gpu_layers = 0;
 #else
     params.n_gpu_layers = request.num_gpu_layers;
@@ -237,12 +302,19 @@ static void run_inference(fllama_inference_request request,
     common_chat_parser_params parser_params;
     common_chat_params chat_params;
     bool is_oai = false;
+    // ZSWatch: OpenAI penalties as llama-server reads them (presence_penalty
+    // is not a repeat penalty; repeat_penalty defaults to off).
+    float oai_presence = 0.0f, oai_frequency = 0.0f, oai_repeat = 1.0f;
 
     if (request.openai_request_json_string) {
       is_oai = true;
       try {
         auto body = nlohmann::ordered_json::parse(
             request.openai_request_json_string);
+
+        oai_presence  = body.value("presence_penalty", 0.0f);
+        oai_frequency = body.value("frequency_penalty", 0.0f);
+        oai_repeat    = body.value("repeat_penalty", 1.0f);
 
         std::string jinja_tmpl;
         if (body.contains("jinja_template") &&
@@ -360,6 +432,11 @@ static void run_inference(fllama_inference_request request,
     task.params.sampling.top_p          = request.top_p;
     task.params.sampling.penalty_freq   = request.penalty_freq;
     task.params.sampling.penalty_repeat = request.penalty_repeat;
+    if (is_oai) {
+      task.params.sampling.penalty_present = oai_presence;
+      task.params.sampling.penalty_freq    = oai_frequency;
+      task.params.sampling.penalty_repeat  = oai_repeat;
+    }
 
     if (is_oai) {
       if (!chat_params.grammar.empty()) {

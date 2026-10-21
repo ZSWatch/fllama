@@ -84,6 +84,7 @@ class OpenAiRequest {
   final String modelPath;
   final String? mmprojPath;
   final int numGpuLayers;
+  final int numThreads;
   final int contextSize;
   final int? nParallel;
   final String? jinjaTemplate;
@@ -175,6 +176,8 @@ class OpenAiRequest {
     // Number of layers to run on GPU. -1 means auto: llama.cpp fits the
     // layers to free GPU memory. 0 means all layers on CPU.
     this.numGpuLayers = 0,
+    // Number of CPU threads for inference and prompt processing.
+    this.numThreads = 2,
     // ultra-safe for mobile inference, but rather small: ChatGPT launched with
     // 4096, today it has 16384. 1000 tokens ~= 3 pages ~= 750 words ~= 3
     // minutes reading time.

@@ -107,8 +107,11 @@ void main(List<String> args) async {
     if (!input.config.buildCodeAssets) {
       // A web build: install the web runtime files of native_artifacts/web.json
       // into the app (native_prebuilt ADR 002).
-      return NativePrebuilt(input: input, output: output, log: print)
-          .installWeb();
+      return NativePrebuilt(
+        input: input,
+        output: output,
+        log: print,
+      ).installWeb();
     }
 
     final hookStopwatch = Stopwatch()..start();
@@ -642,11 +645,9 @@ Map<String, String> computeDefines(
     'LLAMA_BUILD_COMMIT': 'unknown',
   };
 
-  // Apple devices and macOS use Metal. The iOS simulator's Metal shim aborts
-  // on llama.cpp's external-pointer buffers, so simulator integration tests
-  // intentionally use the CPU backend.
-  if (targetOS == OS.macOS ||
-      (targetOS == OS.iOS && targetVariant != 'iphonesimulator')) {
+  // macOS uses Metal. ZSWatch: iOS is CPU-only, the app runs inference in
+  // the background where Metal work is not allowed.
+  if (targetOS == OS.macOS) {
     defines['GGML_METAL'] = 'ON';
     // Embed the Metal shader library into the binary so we don't need
     // to ship a separate .metallib file.
@@ -664,6 +665,16 @@ Map<String, String> computeDefines(
   }
   if (targetOS == OS.iOS) {
     defines['CMAKE_OSX_DEPLOYMENT_TARGET'] = '13.0';
+    // ZSWatch: native_toolchain_cmake passes Flutter's iOS target (12 on
+    // Flutter 3.38) as the toolchain's DEPLOYMENT_TARGET, which wins over
+    // CMAKE_OSX_DEPLOYMENT_TARGET; std::filesystem needs iOS 13.
+    defines['DEPLOYMENT_TARGET'] = '13.0';
+    // ZSWatch: CPU inference needs dotprod/fp16 kernels; without a -march
+    // ggml-cpu builds for the arm64 baseline. armv8.4-a is the A13 (iPhone 11)
+    // baseline; older phones would fault in ggml-cpu.
+    if (targetArch == Architecture.arm64) {
+      defines['GGML_CPU_ARM_ARCH'] = 'armv8.4-a+fp16';
+    }
   }
 
   if (targetOS == OS.windows) {
