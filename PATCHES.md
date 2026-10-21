@@ -23,6 +23,9 @@ The app uses both `fllama` and `whisper_ggml_plus` on iOS. Both dependencies ven
    - `src/fllama.cpp`: Always set `n_gpu_layers = 0` (removed simulator conditional and `llama_supports_gpu_offload()` checks). Metal is still compiled in but never used.
    - Deleted `ios/default.metallib` (pre-compiled Metal kernels — Metal shaders are now embedded in the library via `GGML_METAL_EMBED_LIBRARY`).
 
+7. `pubspec.yaml`
+   - No iOS platform. The app runs no local LLM on iOS, so llama.cpp is not built or linked there.
+
 ## Maintenance
 
 - Prefer rebasing these changes onto upstream `fllama` updates.
