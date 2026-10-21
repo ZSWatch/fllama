@@ -15,6 +15,10 @@ always builds from source.
    Metal work is not allowed).
    - `hook/build.dart`: `GGML_METAL` is off for iOS devices too.
    - `src/fllama.cpp`: `n_gpu_layers = 0` on `TARGET_OS_IPHONE`.
+   - `hook/build.dart`: `GGML_CPU_ARM_ARCH=armv8.4-a+fp16` on iOS arm64, so the
+     CPU kernels use dotprod/fp16 (A13 and newer).
+   - `hook/build.dart`: `DEPLOYMENT_TARGET=13.0`; Flutter 3.38 passes iOS 12,
+     which lacks `std::filesystem`.
 2. Android: `src/fllama.cpp` raises the inference thread priority and pins it
    to the big cores before the model loads; later threads inherit both.
 3. One server slot on iOS and Android (`n_parallel = 1`, `src/fllama.cpp`).
